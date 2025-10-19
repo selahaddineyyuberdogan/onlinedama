@@ -6,7 +6,7 @@ Türk Daması’nı çevrimiçi oynayın! Kayıt olun, misafir girişi yapın, m
 
 ![Ana Sayfa](anasayfa.png) | ![Kayıt/Giriş](kayıtgirişmisafir.png) | ![Lobi](lobi.png)
 
-[![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/) [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/) 
 
 ## Özellikler
 - Kayıt, giriş, misafir girişi (JWT, bcrypt).
@@ -93,7 +93,7 @@ Türk Daması’nı çevrimiçi oynayın! Kayıt olun, misafir girişi yapın, m
 ## İletişim
 - GitHub: [selahaddineyyuberdogan](https://github.com/selahaddineyyuberdogan)
 - Sorunlar için: [Issues](https://github.com/selahaddineyyuberdogan/onlinedama/issues)
-- Mail: seyuperdogan4
+- Mail: seyuperdogan@gmail.com
 
 
    git add .
