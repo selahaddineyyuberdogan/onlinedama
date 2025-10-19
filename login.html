@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dama - Giriş</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            background: #d1a276;
+            padding: 20px;
+        }
+        .login-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 350px;
+        }
+        h2 { 
+            text-align: center; 
+            color: #333; 
+            margin-bottom: 20px; 
+            font-size: 24px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            font-size: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #c58700;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+        button { 
+            width: 100%; 
+            padding: 12px; 
+            background: #745d1e; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px;
+            margin: 5px 0;
+            transition: background 0.3s;
+        }
+        button:hover { 
+            background: #5a67d8; 
+        }
+        button:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        .toggle-form { 
+            text-align: center; 
+            margin-top: 15px; 
+            color: #666; 
+            cursor: pointer;
+            text-decoration: underline;
+            font-size: 14px;
+        }
+        .toggle-form:hover { 
+            color: #667eea; 
+        }
+        .guest-section { 
+            border-top: 1px solid #eee; 
+            padding-top: 20px; 
+            margin-top: 20px;
+        }
+        .guest-section h3 {
+            text-align: center;
+            color: #666;
+            margin: 0 0 15px 0;
+            font-size: 16px;
+        }
+        .error { 
+            color: #e53e3e; 
+            margin: 10px 0; 
+            text-align: center; 
+            padding: 10px;
+            background: #fed7d7;
+            border-radius: 5px;
+            border: 1px solid #feb2b2;
+        }
+        .success { 
+            color: #a78519; 
+            margin: 10px 0; 
+            text-align: center; 
+            padding: 10px;
+            background: #c6f6d5;
+            border-radius: 5px;
+            border: 1px solid #9ae6b4;
+        }
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-style: italic;
+        }
+        .back-link {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        @media (max-width: 480px) {
+            .login-container {
+                margin: 10px;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-link">← Ana Sayfa</a>
+    
+    <div class="login-container">
+        <h2>Dama'ya Hoş Geldin!</h2>
+        
+        <!-- Kayıt Formu -->
+        <div id="registerForm">
+            <div class="form-group">
+                <input type="text" id="regUsername" placeholder="Kullanıcı Adı" maxlength="50">
+            </div>
+            <div class="form-group">
+                <input type="email" id="regEmail" placeholder="Email (opsiyonel)">
+            </div>
+            <div class="form-group">
+                <input type="password" id="regPassword" placeholder="Şifre" maxlength="100">
+            </div>
+            <button id="registerBtn" onclick="register()">Kayıt Ol</button>
+            <div class="toggle-form" onclick="showLogin()">Zaten hesabın var mı? Giriş yap</div>
+        </div>
+        
+        <!-- Giriş Formu -->
+        <div id="loginForm" style="display: none;">
+            <div class="form-group">
+                <input type="text" id="loginUsername" placeholder="Kullanıcı Adı" maxlength="50">
+            </div>
+            <div class="form-group">
+                <input type="password" id="loginPassword" placeholder="Şifre" maxlength="100">
+            </div>
+            <button id="loginBtn" onclick="login()">Giriş Yap</button>
+            <div class="toggle-form" onclick="showRegister()">Hesabın yok mu? Kayıt ol</div>
+        </div>
+        
+        <div class="guest-section">
+            <h3>veya</h3>
+            <div class="form-group">
+                <input type="text" id="guestUsername" placeholder="Misafir kullanıcı adı" maxlength="50">
+            </div>
+            <button id="guestBtn" onclick="guestLogin()">Misafir Olarak Gir</button>
+        </div>
+        
+        <div id="message"></div>
+    </div>
+
+    <script>
+        // Form göster/gizle
+        function showRegister() {
+            document.getElementById('registerForm').style.display = 'block';
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('message').innerHTML = '';
+            document.getElementById('regUsername').focus();
+        }
+        
+        function showLogin() {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('message').innerHTML = '';
+            document.getElementById('loginUsername').focus();
+        }
+        
+        // Mesaj göster
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="${type}">${text}</div>`;
+            
+            // Mesajı 5 saniye sonra sil
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    messageDiv.innerHTML = '';
+                }, 5000);
+            }
+        }
+        
+        // Button loading durumu
+        function setLoading(buttonId, loading) {
+            const btn = document.getElementById(buttonId);
+            if (loading) {
+                btn.disabled = true;
+                btn.textContent = 'Yükleniyor...';
+            } else {
+                btn.disabled = false;
+                if (buttonId === 'registerBtn') btn.textContent = 'Kayıt Ol';
+                if (buttonId === 'loginBtn') btn.textContent = 'Giriş Yap';
+                if (buttonId === 'guestBtn') btn.textContent = 'Misafir Olarak Gir';
+            }
+        }
+        
+        // Kayıt fonksiyonu
+        async function register() {
+            const username = document.getElementById('regUsername').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            
+            // Validasyon
+            if (!username || username.length < 2) {
+                showMessage('Kullanıcı adı en az 2 karakter olmalı', 'error');
+                document.getElementById('regUsername').focus();
+                return;
+            }
+            
+            if (!password || password.length < 4) {
+                showMessage('Şifre en az 4 karakter olmalı', 'error');
+                document.getElementById('regPassword').focus();
+                return;
+            }
+            
+            setLoading('registerBtn', true);
+            showMessage('Kayıt yapılıyor...', 'loading');
+            
+            try {
+                console.log('Kayıt isteği gönderiliyor:', { username, email: email || 'yok' });
+                
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, email, password })
+                });
+                
+                console.log('Kayıt yanıtı:', response.status);
+                
+                const data = await response.json();
+                console.log('Kayıt verisi:', data);
+                
+                if (response.ok && data.success) {
+                    showMessage('Kayıt başarılı! Yönlendiriliyor...', 'success');
+                    localStorage.setItem('token', data.token);
+                    setTimeout(() => {
+                        window.location.href = '/lobby.html';
+                    }, 1500);
+                } else {
+                    showMessage(data.error || 'Kayıt başarısız', 'error');
+                }
+            } catch (err) {
+                console.error('Kayıt hatası:', err);
+                showMessage('Bağlantı hatası: ' + err.message, 'error');
+            } finally {
+                setLoading('registerBtn', false);
+            }
+        }
+        
+        // Giriş fonksiyonu
+        async function login() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            
+            // Validasyon
+            if (!username) {
+                showMessage('Kullanıcı adı gerekli', 'error');
+                document.getElementById('loginUsername').focus();
+                return;
+            }
+            
+            if (!password) {
+                showMessage('Şifre gerekli', 'error');
+                document.getElementById('loginPassword').focus();
+                return;
+            }
+            
+            setLoading('loginBtn', true);
+            showMessage('Giriş yapılıyor...', 'loading');
+            
+            try {
+                console.log('Giriş isteği gönderiliyor:', username);
+                
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                console.log('Giriş yanıtı:', response.status);
+                
+                const data = await response.json();
+                console.log('Giriş verisi:', data);
+                
+                if (response.ok && data.success) {
+                    showMessage('Giriş başarılı! Yönlendiriliyor...', 'success');
+                    localStorage.setItem('token', data.token);
+                    setTimeout(() => {
+                        window.location.href = '/lobby.html';
+                    }, 1500);
+                } else {
+                    showMessage(data.error || 'Giriş başarısız', 'error');
+                }
+            } catch (err) {
+                console.error('Giriş hatası:', err);
+                showMessage('Bağlantı hatası: ' + err.message, 'error');
+            } finally {
+                setLoading('loginBtn', false);
+            }
+        }
+        
+        // Misafir giriş
+        async function guestLogin() {
+            const username = document.getElementById('guestUsername').value.trim();
+            
+            if (!username || username.length < 2) {
+                showMessage('Misafir kullanıcı adı en az 2 karakter olmalı', 'error');
+                document.getElementById('guestUsername').focus();
+                return;
+            }
+            
+            setLoading('guestBtn', true);
+            showMessage('Misafir giriş yapılıyor...', 'loading');
+            
+            try {
+                console.log('Misafir giriş isteği:', username);
+                
+                const response = await fetch('/guest-login', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username })
+                });
+                
+                console.log('Misafir giriş yanıtı:', response.status);
+                
+                const data = await response.json();
+                console.log('Misafir giriş verisi:', data);
+                
+                if (response.ok && data.success) {
+                    showMessage('Misafir girişi başarılı! Yönlendiriliyor...', 'success');
+                    localStorage.setItem('token', data.token);
+                    setTimeout(() => {
+                        window.location.href = '/lobby.html';
+                    }, 1500);
+                } else {
+                    showMessage(data.error || 'Misafir girişi başarısız', 'error');
+                }
+            } catch (err) {
+                console.error('Misafir giriş hatası:', err);
+                showMessage('Bağlantı hatası: ' + err.message, 'error');
+            } finally {
+                setLoading('guestBtn', false);
+            }
+        }
+        
+        // Enter tuşu desteği
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (document.getElementById('registerForm').style.display !== 'none') {
+                    register();
+                } else if (document.getElementById('loginForm').style.display !== 'none') {
+                    login();
+                } else {
+                    guestLogin();
+                }
+            }
+        });
+        
+        // Otomatik giriş kontrolü
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                // Token var, lobiye git
+                showMessage('Oturum algılandı, lobiye yönlendiriliyor...', 'success');
+                setTimeout(() => {
+                    window.location.href = '/lobby.html';
+                }, 1000);
+            } else {
+                // İlk formu göster
+                document.getElementById('regUsername').focus();
+            }
+        });
+    </script>
+</body>
+</html>

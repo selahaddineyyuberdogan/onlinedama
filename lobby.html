@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dama Lobisi</title>
+    <style>
+        body { font-family: Arial; text-align: center; background: #d1a276;; margin: 0; padding: 20px; }
+        .header { background: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .user-info { float: right; color: #666; }
+        .logout-btn { background: #6e0000; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+        #tableList { list-style: none; padding: 0; max-width: 600px; margin: 0 auto; }
+        li { 
+            background: white; 
+            margin: 10px; 
+            padding: 15px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        button { padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; }
+        .create-btn { background: #473317; color: white; }
+        .join-btn { background: #473317; color: white; }
+        .status-open { color: #058d3e; }
+        .status-playing { color: #7c0101; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Dama Masaları</h1>
+        <div class="user-info">
+            <span id="currentUser"></span>
+            <button class="logout-btn" onclick="logout()">Çıkış</button>
+        </div>
+    </div>
+    
+    <button class="create-btn" onclick="createTable()">Yeni Masa Oluştur</button>
+    <h2>Mevcut Masalar</h2>
+    <ul id="tableList"></ul>
+
+    <script>
+        let currentToken = localStorage.getItem('token');
+        
+        function getHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                ...(currentToken && { 'Authorization': `Bearer ${currentToken}` })
+            };
+        }
+        
+        async function checkAuth() {
+            if (!currentToken) {
+                window.location.href = '/login.html';
+                return false;
+            }
+            
+            // Token decode et (basit kontrol)
+            try {
+                const payload = JSON.parse(atob(currentToken.split('.')[1]));
+                document.getElementById('currentUser').textContent = payload.username;
+                return true;
+            } catch (err) {
+                localStorage.removeItem('token');
+                window.location.href = '/login.html';
+                return false;
+            }
+        }
+        
+        async function loadTables() {
+            try {
+                const response = await fetch('/tables', {
+                    headers: getHeaders()
+                });
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                if (!response.ok) {
+                    return response.json().then(err => { 
+                        throw new Error(err.error || 'Bilinmeyen hata'); 
+                    });
+                }
+                
+                const tables = await response.json();
+                console.log('Masalar yüklendi:', tables);
+                
+                const list = document.getElementById('tableList');
+                list.innerHTML = '';
+                
+                if (tables.length === 0) {
+                    list.innerHTML = '<li>Henüz masa yok.</li>';
+                }
+                
+                tables.forEach(table => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <span>Masa ID: ${table.id} 
+                            <span class="status-${table.status}">${table.status === 'open' ? 'Boş' : 'Oynanıyor'}</span>
+                        </span>
+                        <button class="join-btn" onclick="joinTable('${table.id}')">Katıl</button>
+                    `;
+                    list.appendChild(li);
+                });
+            } catch (err) {
+                console.error('Masalar yüklenemedi:', err);
+                alert('Masalar yüklenemedi: ' + err.message);
+            }
+        }
+        
+        async function createTable() {
+            try {
+                const response = await fetch('/create-table', {
+                    method: 'POST',
+                    headers: getHeaders()
+                });
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                if (!response.ok) {
+                    return response.json().then(err => { 
+                        throw new Error(err.error || 'Bilinmeyen hata'); 
+                    });
+                }
+                
+                const data = await response.json();
+                console.log('Masa oluşturuldu:', data);
+                window.location.href = data.link;
+            } catch (err) {
+                console.error('Masa oluşturma hatası:', err);
+                alert('Masa oluşturulamadı: ' + err.message);
+            }
+        }
+        
+        function joinTable(tableId) {
+            console.log(`Katıl tıklandı: tableId=${tableId}`);
+            window.location.href = `/game.html?table=${tableId}`;
+        }
+        
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login.html';
+        }
+        
+        // Başlat
+        checkAuth().then(authenticated => {
+            if (authenticated) {
+                loadTables();
+                setInterval(loadTables, 5000);
+            }
+        });
+    </script>
+</body>
+</html>

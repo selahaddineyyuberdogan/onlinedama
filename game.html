@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<title>Türk Daması - Çevrimiçi</title>
+<style>
+  body{display:flex;flex-direction:column;align-items:center;font-family:Arial, sans-serif;margin:0;padding:20px;height:100vh;background: #d1a276;}
+  .header{width:100%;max-width:600px;text-align:center;margin-bottom:18px;}
+  h1{color:#fff;margin:0;font-size:26px;text-shadow:2px 2px 4px rgba(0,0,0,0.45);}
+  canvas{width:90vw;height:90vw;max-width:520px;max-height:520px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.25);background:#8B4513;touch-action:none;}
+  .game-info{width:100%;max-width:600px;padding:14px;text-align:center;margin-top:16px;background:#fff;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08);}
+  #status{font-weight:bold;color:#333;min-height:24px;}
+  #playerInfo{margin-top:8px;padding:10px;background:#f8f9fa;border-radius:8px;border:1px solid #e9ecef;}
+  .turn-indicator{display:inline-block;width:18px;height:18px;border-radius:50%;margin:0 6px;vertical-align:middle;}
+  .black{background:#000000}.white{background:#ffffff}
+  .back-btn{position:absolute;top:16px;left:16px;background:#6c757d;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none;}
+  @media(max-width:768px){h1{font-size:22px}}
+</style>
+</head>
+<body>
+  <a class="back-btn" href="/lobby.html">← Lobiye Dön</a>
+  <div class="header"><h1>Türk Daması</h1></div>
+  <canvas id="gameCanvas"></canvas>
+  <div class="game-info">
+    <div id="status">Bağlanıyor...</div>
+    <div id="playerInfo">Oyuncu: Bekleniyor</div>
+  </div>
+
+<script>
+/* Minimal documentation in code; neden -> önemli noktalar kısa açıklandı. */
+
+/* ====== Sabitler & durum ====== */
+const PIECECOLOR = { BLACK:0, WHITE:1 };
+const PIECETYPE  = { PAWN:0, KING:1 };
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let socket = null;
+let playerColor = null;
+let currentUsername = 'Oyuncu';
+let opponentName = 'Rakip';
+let gameStarted = false;
+let boardReady = false;
+
+let pieceList = [];
+let positionArray = Array(8).fill().map(()=>Array(8).fill(-1)); // [y][x]
+let turn = PIECECOLOR.BLACK;
+
+let selectedPiece = null;
+let possibleMoves = []; // {toX,toY,eats:[ [ex,ey],... ]}
+let isJumping = false;
+
+let mouseX=0, mouseY=0;
+
+/* ====== URL/Auth ====== */
+const urlParams = new URLSearchParams(window.location.search);
+const tableId = urlParams.get('table');
+if(!tableId){ showError('Hata: Geçersiz masa!'); setTimeout(()=>window.location.href='/lobby.html',1500); }
+
+/* ====== UI helpers ====== */
+function showError(msg){ document.getElementById('status').innerHTML = `<span style="color:#dc3545;">❌ ${msg}</span>`; }
+function showSuccess(msg){ document.getElementById('status').innerHTML = `<span style="color:#28a745;">✅ ${msg}</span>`; }
+function showInfo(msg){ document.getElementById('status').innerHTML = `${msg}`; }
+
+/* ====== Canvas size & render loop ====== */
+function resizeCanvas(){ const maxSize = Math.min(window.innerWidth-40, window.innerHeight-200, 520); canvas.width = maxSize; canvas.height = maxSize; renderFull(); }
+window.addEventListener('resize', resizeCanvas);
+
+/* ====== Piece class ====== */
+class Piece {
+  constructor(x,y,col,type){
+    this.x = x; this.y = y; this.col = col; this.type = type;
+    this.hovering = false; this.selected = false;
+  }
+  update(){
+    if(!gameStarted || !boardReady || turn !== this.col || this.col !== playerColor){ this.hovering=false; return; }
+    const cellSize = canvas.width/8;
+    const screenX = this.x*cellSize + cellSize/2;
+    const screenY = (playerColor===PIECECOLOR.WHITE ? this.y*cellSize : (7-this.y)*cellSize) + cellSize/2;
+    const d = Math.hypot(mouseX - screenX, mouseY - screenY);
+    this.hovering = d < (cellSize/2 - 4);
+  }
+  place(){ if(this.y>=0&&this.y<8&&this.x>=0&&this.x<8) positionArray[this.y][this.x] = this.col; }
+  promote(){ this.type = PIECETYPE.KING; }
+  getSimpleMoves(){
+    const moves = [];
+    if(this.type === PIECETYPE.PAWN){
+      const dirs = [[0, (this.col===PIECECOLOR.BLACK? 1:-1)], [1,0], [-1,0]];
+      for(const [dx,dy] of dirs){
+        const nx = this.x + dx, ny = this.y + dy;
+        if(nx>=0 && nx<8 && ny>=0 && ny<8 && positionArray[ny][nx] === -1){
+          moves.push({toX:nx,toY:ny,eats:[]});
+        }
+      }
+    } else { // KING: only orthogonal steps
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dx,dy] of dirs){
+        for(let i=1;i<8;i++){
+          const nx = this.x + dx*i, ny = this.y + dy*i;
+          if(nx<0||nx>=8||ny<0||ny>=8) break;
+          if(positionArray[ny][nx] === -1) moves.push({toX:nx,toY:ny,eats:[]});
+          else break;
+        }
+      }
+    }
+    return moves;
+  }
+  render(){
+    const cellSize = canvas.width/8;
+    const rx = this.x*cellSize + cellSize/2;
+    const ry = (playerColor===PIECECOLOR.WHITE ? this.y*cellSize : (7-this.y)*cellSize) + cellSize/2;
+    if(this.hovering && !this.selected){ ctx.beginPath(); ctx.fillStyle = this.col===PIECECOLOR.BLACK ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"; ctx.arc(rx,ry,cellSize/2+3,0,2*Math.PI); ctx.fill(); }
+    if(this.selected){ ctx.beginPath(); ctx.fillStyle="rgba(0,255,0,0.14)"; ctx.arc(rx,ry,cellSize/2+6,0,2*Math.PI); ctx.fill(); ctx.strokeStyle="#00ff00"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(rx,ry,cellSize/2+6,0,2*Math.PI); ctx.stroke(); }
+    ctx.beginPath(); ctx.fillStyle = this.col===PIECECOLOR.BLACK? "#303030" : "#ffffff"; ctx.arc(rx,ry,cellSize/2-5,0,2*Math.PI); ctx.fill();
+    if(this.type===PIECETYPE.KING){ ctx.beginPath(); ctx.fillStyle="#ffd700"; ctx.arc(rx,ry,cellSize/4,0,2*Math.PI); ctx.fill(); ctx.beginPath(); ctx.strokeStyle="#000"; ctx.lineWidth=3; ctx.arc(rx,ry,cellSize/2-3,0,2*Math.PI); ctx.stroke(); }
+    ctx.beginPath(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.arc(rx,ry,cellSize/2-5,0,2*Math.PI); ctx.stroke();
+  }
+}
+
+/* ====== Jump / capture helpers ====== */
+/* computeImmediateJumpsFrom: returns array of {toX,toY,eats:[[ex,ey],...]} for a single jump step */
+function computeImmediateJumpsFrom(x,y,type,col,board){
+  const jumps = [];
+  const opp = 1 - col;
+  if(type === PIECETYPE.PAWN){
+    const dirs = [[0,2],[0,-2],[2,0],[-2,0]];
+    for(const [dx,dy] of dirs){
+      const nx = x + dx, ny = y + dy;
+      const ox = x + dx/2, oy = y + dy/2;
+      if(nx>=0 && nx<8 && ny>=0 && ny<8 && ox>=0 && ox<8 && oy>=0 && oy<8){
+        if(board[oy][ox] === opp && board[ny][nx] === -1){
+          jumps.push({toX:nx,toY:ny,eats:[[ox,oy]]});
+        }
+      }
+    }
+  } else { // KING: only orthogonal (no diagonal)
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(const [dx,dy] of dirs){
+      // find first opponent; then any empty landing after it
+      for(let i=1;i<8;i++){
+        const cx = x + dx*i, cy = y + dy*i;
+        if(cx<0||cx>=8||cy<0||cy>=8) break;
+        if(board[cy][cx] === -1) continue;
+        if(board[cy][cx] === opp){
+          for(let j=i+1;j<8;j++){
+            const lx = x + dx*j, ly = y + dy*j;
+            if(lx<0||lx>=8||ly<0||ly>=8) break;
+            if(board[ly][lx] === -1){
+              jumps.push({toX:lx,toY:ly,eats:[[cx,cy]]});
+            } else break;
+          }
+          break;
+        } else break;
+      }
+    }
+  }
+  return jumps;
+}
+
+/* DFS to get all capture sequences for a piece; returns sequences with accumulated eats */
+function getAllCaptureSequencesForPiece(piece, board){
+  const sequences = [];
+  const startX = piece.x, startY = piece.y, type = piece.type, col = piece.col;
+  function dfs(cx,cy,curBoard,eatenSoFar){
+    const immed = computeImmediateJumpsFrom(cx,cy,type,col,curBoard);
+    if(immed.length === 0){
+      if(eatenSoFar.length > 0) sequences.push({toX:cx,toY:cy,eats: eatenSoFar.slice()});
+      return;
+    }
+    for(const mv of immed){
+      // simulate
+      const nb = curBoard.map(r=>r.slice());
+      for(const [ex,ey] of mv.eats) nb[ey][ex] = -1;
+      nb[cy][cx] = -1;
+      nb[mv.toY][mv.toX] = col;
+      eatenSoFar.push(...mv.eats);
+      dfs(mv.toX, mv.toY, nb, eatenSoFar);
+      // backtrack
+      for(let k=0;k<mv.eats.length;k++) eatenSoFar.pop();
+    }
+  }
+  const boardCopy = board.map(r=>r.slice());
+  dfs(startX,startY,boardCopy,[]);
+  return sequences;
+}
+
+/* Get global max captures for 'turn' and sequences grouped by piece pos */
+function getGlobalMaxCaptures(forTurn){
+  let maxEats = 0;
+  const sequencesByPiece = {};
+  for(const p of pieceList){
+    if(p.col !== forTurn) continue;
+    const seqs = getAllCaptureSequencesForPiece(p, positionArray);
+    if(seqs.length > 0){
+      sequencesByPiece[`${p.x},${p.y}`] = seqs;
+      for(const s of seqs) if(s.eats.length > maxEats) maxEats = s.eats.length;
+    }
+  }
+  return { maxEats, sequencesByPiece };
+}
+
+/* ====== Init board (and send to server when ready) ====== */
+function sendInitBoard(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  pieceList = []; positionArray = Array(8).fill().map(()=>Array(8).fill(-1));
+  for(let y=1;y<=2;y++){ for(let x=0;x<8;x++){ const p = new Piece(x,y,PIECECOLOR.BLACK,PIECETYPE.PAWN); pieceList.push(p); positionArray[y][x] = PIECECOLOR.BLACK; } }
+  for(let y=5;y<=6;y++){ for(let x=0;x<8;x++){ const p = new Piece(x,y,PIECECOLOR.WHITE,PIECETYPE.PAWN); pieceList.push(p); positionArray[y][x] = PIECECOLOR.WHITE; } }
+  const initData = { type:'initBoard', pieceList: pieceList.map(p=>({x:p.x,y:p.y,col:p.col,type:p.type})), positionArray, turn };
+  socket.send(JSON.stringify(initData));
+  boardReady = true; renderFull(); updatePlayerInfo();
+}
+
+/* ====== WebSocket (basic, tolerates missing server gracefully) ====== */
+function checkAuth(){ const token = localStorage.getItem('token'); if(!token){ showError('Oturum gerekli! Lobiye yönlendiriliyor...'); setTimeout(()=>window.location.href='/lobby.html',1500); return false; } return true; }
+
+function connectToServer(){
+  if(!checkAuth()) return;
+  const token = localStorage.getItem('token');
+  const wsUrl = `ws://${location.host}?table=${tableId}&token=${encodeURIComponent(token)}`;
+  try{ socket = new WebSocket(wsUrl); } catch(e){ showError('WebSocket bağlanamadı'); return; }
+  socket.onopen = ()=>{ showSuccess('Bağlandı — rakip bekleniyor...'); try{ const payload = JSON.parse(atob(token.split('.')[1])); currentUsername = payload.username || currentUsername; }catch(e){} setTimeout(sendInitBoard,150); };
+  socket.onmessage = (ev)=>{
+    try{
+      const data = JSON.parse(ev.data);
+      if(data.type === 'playerInfo'){ playerColor = data.playerColor; currentUsername = data.username || currentUsername; updatePlayerInfo(); }
+      if(data.type === 'gameStart'){ gameStarted = true; opponentName = data.opponentName || opponentName; showSuccess('Oyun başladı!'); updatePlayerInfo(); renderFull(); }
+      if(data.type === 'initBoard'){ if(data.pieceList) pieceList = data.pieceList.map(p=>new Piece(p.x,p.y,p.col,p.type)); if(data.positionArray) positionArray = data.positionArray; if(data.turn!==undefined) turn = data.turn; boardReady=true; renderFull(); updatePlayerInfo(); }
+      if(data.type === 'gameState'){ if(data.positionArray) positionArray = data.positionArray; if(data.pieceList) pieceList = data.pieceList.map(p=>new Piece(p.x,p.y,p.col,p.type)); if(data.turn!==undefined) turn = data.turn; selectedPiece=null; possibleMoves=[]; isJumping=false; renderFull(); updatePlayerInfo(); }
+      if(data.type === 'opponentDisconnected') showError(opponentName + ' bağlantıyı kesti.'); 
+      if(data.type === 'gameEnd') { const winnerName = data.winner === playerColor ? currentUsername : opponentName; showSuccess(winnerName + ' kazandı!'); }
+      if(data.type === 'error') showError(data.message || 'Sunucudan hata geldi');
+    }catch(e){ console.error('ws msg parse', e); }
+  };
+  socket.onerror = ()=>showError('WebSocket hatası');
+  socket.onclose = (ev)=>{ if(ev.code !== 1000){ showError('Bağlantı kesildi. Yeniden deneniyor...'); setTimeout(connectToServer,2000); } };
+}
+
+/* ====== Input handling ====== */
+canvas.addEventListener('mousemove', (ev)=>{ const r = canvas.getBoundingClientRect(); mouseX = (ev.clientX - r.left) * (canvas.width / r.width); mouseY = (ev.clientY - r.top) * (canvas.height / r.height); });
+canvas.addEventListener('mousedown', ()=>{ handleClick(); });
+canvas.addEventListener('touchstart', (ev)=>{ ev.preventDefault(); if(ev.touches.length!==1) return; const t = ev.touches[0]; const r = canvas.getBoundingClientRect(); mouseX = (t.clientX - r.left)*(canvas.width/r.width); mouseY = (t.clientY - r.top)*(canvas.height/r.height); handleClick(); }, {passive:false});
+
+/* ====== Click logic (seçim & hareket) ====== */
+function handleClick(){
+  if(!gameStarted || !boardReady || playerColor === null || turn !== playerColor) return;
+  const cellSize = canvas.width/8;
+  const gx = Math.floor(mouseX / cellSize);
+  const gyScreen = Math.floor(mouseY / cellSize);
+  const gy = (playerColor === PIECECOLOR.WHITE) ? gyScreen : 7 - gyScreen;
+  if(gx<0||gx>=8||gy<0||gy>=8) return;
+
+  // find piece at clicked square
+  const clickedPiece = pieceList.find(p => p.x === gx && p.y === gy && p.col === playerColor);
+
+  // If no selection yet
+  if(!selectedPiece){
+    if(!clickedPiece) return; // clicked empty or opponent piece
+    const global = getGlobalMaxCaptures(turn);
+    if(global.maxEats > 0){
+      const key = `${clickedPiece.x},${clickedPiece.y}`;
+      const seqs = global.sequencesByPiece[key] || [];
+      const allowed = seqs.filter(s => s.eats.length === global.maxEats);
+      if(allowed.length === 0){
+        showError('Zorunlu yeme var! Yeme yapabilen taş seç.');
+        return;
+      }
+      // select and show allowed capture landings
+      pieceList.forEach(p=>p.selected=false);
+      clickedPiece.selected = true;
+      selectedPiece = clickedPiece;
+      isJumping = true;
+      possibleMoves = allowed.map(s => ({toX:s.toX,toY:s.toY,eats:s.eats.slice()}));
+      renderFull(); updatePlayerInfo();
+      return;
+    } else {
+      // no global forced capture -> allow simple moves
+      const simple = clickedPiece.getSimpleMoves();
+      pieceList.forEach(p=>p.selected=false);
+      clickedPiece.selected = true;
+      selectedPiece = clickedPiece;
+      isJumping = false;
+      possibleMoves = simple.slice(); // may be empty
+      renderFull(); updatePlayerInfo();
+      return;
+    }
+  }
+
+  // If a piece is already selected: try to move to clicked square if it's in possibleMoves
+  const move = possibleMoves.find(m=>m.toX===gx && m.toY===gy);
+  if(move){
+    // perform move
+    // clear old pos
+    positionArray[selectedPiece.y][selectedPiece.x] = -1;
+    selectedPiece.x = move.toX; selectedPiece.y = move.toY;
+    // remove eaten pieces
+    if(move.eats && move.eats.length>0){
+      for(const [ex,ey] of move.eats){
+        if(ex>=0 && ex<8 && ey>=0 && ey<8){
+          positionArray[ey][ex] = -1;
+          for(let i=pieceList.length-1;i>=0;i--){
+            if(pieceList[i].x===ex && pieceList[i].y===ey && pieceList[i].col !== selectedPiece.col){ pieceList.splice(i,1); break; }
+          }
+        }
+      }
+    }
+    // place moved piece
+    selectedPiece.place();
+
+    // promotion check
+    if((selectedPiece.col === PIECECOLOR.BLACK && selectedPiece.y === 7) || (selectedPiece.col === PIECECOLOR.WHITE && selectedPiece.y === 0)){
+      if(selectedPiece.type !== PIECETYPE.KING){ selectedPiece.promote(); showSuccess('Dama oldun! 👑'); }
+    }
+
+    // After a capture, check if more captures exist for this same piece
+    if(move.eats && move.eats.length>0){
+      const seqs = getAllCaptureSequencesForPiece(selectedPiece, positionArray);
+      if(seqs.length > 0){
+        // require continuation: pick sequences with max eats from this point
+        const maxNext = Math.max(...seqs.map(s=>s.eats.length));
+        const allowedNext = seqs.filter(s => s.eats.length === maxNext);
+        possibleMoves = allowedNext.map(s=>({toX:s.toX,toY:s.toY,eats:s.eats.slice()}));
+        selectedPiece.selected = true; isJumping = true; renderFull(); updatePlayerInfo();
+        showInfo('Devam et, daha fazla yiyebilirsin!');
+        return; // do not switch turn yet
+      }
+    }
+
+    // No further captures -> end turn
+    selectedPiece.selected = false; selectedPiece = null; possibleMoves = []; isJumping = false;
+    turn = 1 - turn;
+    renderFull(); sendMoveToServer(); updatePlayerInfo();
+    return;
+  }
+
+  // If clicked elsewhere while selection active
+  if(isJumping){
+    showError('Geçersiz hareket! Yeme yapmaya devam et.');
+    return;
+  } else {
+    // cancel selection
+    if(selectedPiece) selectedPiece.selected = false;
+    selectedPiece = null; possibleMoves = []; renderFull(); updatePlayerInfo();
+    return;
+  }
+}
+
+/* ====== Send move to server ====== */
+function sendMoveToServer(){
+  if(!socket || socket.readyState !== WebSocket.OPEN) return;
+  const payload = { type:'move', pieceList: pieceList.map(p=>({x:p.x,y:p.y,col:p.col,type:p.type})), positionArray, turn };
+  socket.send(JSON.stringify(payload));
+}
+
+/* ====== Rendering ====== */
+function renderFull(){
+  renderBackground();
+  renderMovePaths();
+  renderPieces();
+}
+function renderBackground(){
+  const cellSize = canvas.width/8;
+  ctx.fillStyle = "#f0d9b5"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = "#b58863";
+  for(let x=0;x<8;x++){
+    for(let y=0;y<8;y++){
+      const yPos = (playerColor===PIECECOLOR.WHITE ? y*cellSize : (7-y)*cellSize);
+      if((x+y)%2===0) ctx.fillRect(x*cellSize, yPos, cellSize, cellSize);
+    }
+  }
+}
+function renderMovePaths(){
+  if(!possibleMoves || possibleMoves.length===0) return;
+  const cellSize = canvas.width/8;
+  for(const mv of possibleMoves){
+    const yRender = (playerColor===PIECECOLOR.WHITE ? mv.toY*cellSize : (7-mv.toY)*cellSize);
+    ctx.fillStyle = (mv.eats && mv.eats.length>0) ? "rgba(255,0,0,0.28)" : "rgba(0,255,0,0.22)";
+    ctx.fillRect(mv.toX*cellSize, yRender, cellSize, cellSize);
+  }
+}
+function renderPieces(){ for(const p of pieceList) p.render(); }
+
+/* ====== UI update ====== */
+function updatePlayerInfo(){
+  const statusDiv = document.getElementById('status');
+  const playerInfoDiv = document.getElementById('playerInfo');
+  if(!gameStarted){
+    if(playerColor!==null){ statusDiv.innerHTML = `Rakip bekleniyor...`; playerInfoDiv.innerHTML = `<strong>${currentUsername}</strong> <span class="turn-indicator ${playerColor===0?'black':'white'}"></span> (${playerColor===0?'Siyah':'Beyaz'})`; }
+    return;
+  }
+  const myTurn = (turn === playerColor);
+  const turnColor = turn === PIECECOLOR.BLACK ? 'Siyah' : 'Beyaz';
+  let text = `Sıra: <span class="turn-indicator ${turn===0?'black':'white'}"></span> <strong>${turnColor}</strong> ${myTurn?'<span style="color:#28a745;">← Senin sıran!</span>':''}`;
+  if(myTurn){
+    const gf = getGlobalMaxCaptures(turn);
+    if(gf.maxEats > 0) text += ' <span style="color:#dc3545;">⚠️ Yeme zorunlu! En çok yiyen hamleyi seç.</span>';
+  }
+  statusDiv.innerHTML = text;
+  playerInfoDiv.innerHTML = `<div><strong>Sen:</strong> ${currentUsername} <span class="turn-indicator ${playerColor===0?'black':'white'}"></span></div>
+                             <div><strong>Rakip:</strong> ${opponentName} <span class="turn-indicator ${playerColor===0?'white':'black'}"></span></div>`;
+}
+
+/* ====== Main loop & start ====== */
+function gameLoop(){
+  if(gameStarted && boardReady && pieceList){
+    for(const p of pieceList) p.update();
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+resizeCanvas();
+connectToServer();
+gameLoop();
+
+document.addEventListener('contextmenu', e=>e.preventDefault());
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Türk Daması - Çevrimiçi</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            background: #d1a276;
+        }
+        .welcome-container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            position: relative; /* Added to position GitHub icon relative to container */
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        p { color: #666; margin-bottom: 30px; }
+        .btn { 
+            display: inline-block; 
+            padding: 12px 24px; 
+            margin: 5px; 
+            background: #5f4b21; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 8px; 
+            font-size: 16px;
+        }
+        .btn:hover { background: #3f372c; }
+        .btn-secondary { background: #473317; }
+        .btn-secondary:hover { background: #473317; }
+        .github-icon {
+            width: 40px;
+            height: 40px;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            transition: opacity 0.3s;
+        }
+        .github-icon:hover { opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <div class="welcome-container">
+        <h1>🇹🇷 Türk Daması</h1>
+        <p>Çevrimiçi dama oyunu ile arkadaşlarınla veya rastgele rakiplerle oynayın!</p>
+        <a href="/login.html" class="btn btn-secondary">Hemen Oyna</a>
+        <a href="/lobby.html" class="btn">Lobiye Git</a>
+        <a href="githublinki" target="_blank">
+            <img src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png" alt="GitHub" class="github-icon">
+        </a>
+    </div>
+</body>
+</html>
